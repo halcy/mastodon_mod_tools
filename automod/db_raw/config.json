@@ -1,0 +1,29 @@
+{
+    "fields": {
+        "username": {
+            "type": "text",
+            "min_len": 5,
+            "threshold": 0.93
+        },
+        "display_name": {
+            "type": "text",
+            "min_len": 3,
+            "threshold": 0.83
+        },
+        "note": {
+            "type": "text",
+            "min_len": 10,
+            "threshold": 0.93
+        },
+        "avatar": {
+            "type": "image",
+            "threshold": 0.93
+        },
+        "header": {
+            "type": "image",
+            "threshold": 0.93
+        }
+    },
+    "overall_threshold_likelihood": 0.95,
+    "overall_threshold_flags": 1
+}
