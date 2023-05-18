@@ -18,8 +18,8 @@ import numpy as np
 # Settings
 app_settings = {
     "credential_file": "/home/halcy/masto/pytooter_usercred_ADMIN_DANGER.secret",
-    "raw_db_dir": "/mnt/c/Users/halcy/Desktop/Automod/db_raw/",
-    "embed_db_file": "/mnt/c/Users/halcy/Desktop/Automod/db.pkl",
+    "raw_db_dir": "/mnt/c/Users/halcy/Desktop/mastodon_mod_tools/automod/db_raw/",
+    "embed_db_file": "/mnt/c/Users/halcy/Desktop/mastodon_mod_tools/automod/db.pkl",
     "image_extensions": ["gif", "png", "jpg", "jpeg"],
     "wait_time": 120,
     "preemptive_silence": False,
@@ -32,6 +32,8 @@ trigger_db = {
     "pre_matrices": { },
     "config": None,
     "last_checked_user_id": 0,
+    "field_history": defaultdict(list),
+    "reported_ids": set( )
 }
 
 # Embed helpers
@@ -98,18 +100,30 @@ def update_db(base_db, app_settings, models):
                     
         if dirty:
             trigger_db_updated["pre_matrices"][field] = np.vstack(list(trigger_db_updated["embeds"][field].values()))
-    
+
     return trigger_db_updated
 
 # Test user against trigger db
+# Returns a LIST of results, since it can generate multiple reported users
 def eval_user(user_dict, trigger_db, models):
     matches = []
+    reports = []
     best_match_likelihood = 0.0
     
     for field in trigger_db["pre_matrices"]:
+        # Check against ignore list so we don't report for missing ava/header, or being the internal fetch actor
+        if user_dict[field] in trigger_db["config"]["fields"][field]["ignore"]:
+            continue
+
+        # Bail if below minimum length
+        min_len = 1
+        if trigger_db["config"]["fields"][field]["type"] == "text":
+            min_len = trigger_db["config"]["fields"][field]["min_len"]
+        if len(user_dict[field]) < min_len:
+            continue
+
         # Find embed value for field
         field_embed = None
-        field_text_value = None
         if trigger_db["config"]["fields"][field]["type"] == "image":
             image = read_image_online(user_dict[field])
             if not image is None:
@@ -125,7 +139,29 @@ def eval_user(user_dict, trigger_db, models):
                 match_idx = np.argmax(cosine_sim_matrix)
                 matches.append([field, field_match_likelihood, user_dict[field], list(trigger_db["embeds"][field].keys())[match_idx]])
             best_match_likelihood = max(best_match_likelihood, field_match_likelihood)
-            
+
+            # Compare with history
+            if len(trigger_db["field_history"][field]) > 0:
+                history_matrix = np.array([x[1] for x in trigger_db["field_history"][field]])
+                similarity_matches = ((history_matrix @ field_embed) > trigger_db["config"]["fields"][field]["threshold_similar"])
+                if np.sum(similarity_matches) >= trigger_db["config"]["similar_users_count_threshold"]:
+                    # Generate reason string
+                    reason = f"Similar user count exceeded ({np.sum(similarity_matches) + 1} out of {trigger_db['config']['similar_users_history_length']}) on field {field}. Matching users:\n"
+                    for is_match, match_dict in zip(similarity_matches, [x[0] for x in trigger_db["field_history"][field]]):
+                        if is_match:
+                            reason += f" * {match_dict.acct}, {field} = '{match_dict[field]}'\n"
+                    reason += f" * {user_dict.acct}, {field} = '{user_dict[field]}'\n"
+
+                    # One report for every matching user
+                    for is_match, match_dict in zip(similarity_matches, [x[0] for x in trigger_db["field_history"][field]]):
+                        if is_match:
+                            reports.append((match_dict, reason))
+                    reports.append((user_dict, reason))
+
+            # Append to history
+            trigger_db["field_history"][field].append((user_dict, field_embed))
+            trigger_db["field_history"][field] = trigger_db["field_history"][field][-trigger_db["config"]["similar_users_history_length"]:]
+
     # See if we hit any match conditions
     hit = False
     reason = None
@@ -143,7 +179,8 @@ def eval_user(user_dict, trigger_db, models):
         response_text = f"Reason: {reason}\n\nMatches:\n"
         for field, likelihood, field_value, matched_value in matches:
             response_text += f" * {field} = '{field_value}' matched db entry '{matched_value}' with likelihood {likelihood}\n"
-    return hit, response_text, matches
+        reports.append((user_dict, response_text))
+    return reports
 
 # Load models
 clip_model, _, image_preprocessor = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
@@ -186,13 +223,17 @@ while True:
     panic_stop = 0
     for user in accounts:
         account_dict = user.account
-        hit, reason, matches = eval_user(account_dict, trigger_db, models)
-        if hit:
+        reports = eval_user(account_dict, trigger_db, models)
+        for report_dict, reason in reports:
+            # Skip already reported
+            if report_dict.id in trigger_db["reported_ids"]:
+                continue
+
             # Log hit (TODO: real logging)
-            print(f"Hit on user {account_dict.acct}\n\n{reason}")
+            print(f"Hit on user {report_dict.acct}\n\n{reason}")
 
             # File report
-            report = mastodon.report(account_dict, comment=f"/!\ AUTOMATED DETECTION /!\\n\nReason: {reason}")
+            report = mastodon.report(report_dict, comment=f"/!\ AUTOMATED DETECTION /!\\n\nReason: {reason}")
             panic_stop += 1
             if panic_stop >= app_settings["panic_stop"]:
                 print("Panic - reporting users at too great a rate. Exiting.")
@@ -200,9 +241,17 @@ while True:
 
             # If desired: Silence user immediately and leave it for mod to unsilence if false positive
             if app_settings["preemptive_silence"]:
-                mastodon.admin_account_moderate(account_dict, action="silence", report = report)
+                mastodon.admin_account_moderate(report_dict, action="silence", report = report)
                 mastodon.admin_report_reopen(report)
+    
+            # Add to history
+            trigger_db["reported_ids"].add(report_dict.id)
+
+    # Store trigger db cache with updated histories
+    with open(app_settings["embed_db_file"], 'wb') as f:
+        pickle.dump(trigger_db, f, protocol = pickle.HIGHEST_PROTOCOL)
 
     # Wait until next period
+    print("Entering waiting state")
     time.sleep(app_settings["wait_time"])
     
