@@ -233,7 +233,7 @@ while True:
             print(f"Hit on user {report_dict.acct}\n\n{reason}")
 
             # File report
-            report = mastodon.report(report_dict, comment=f"/!\ AUTOMATED DETECTION /!\\n\nReason: {reason}")
+            report = mastodon.report(report_dict, comment=f"/!\ AUTOMATED DETECTION /!\n\nReason: {reason}")
             panic_stop += 1
             if panic_stop >= app_settings["panic_stop"]:
                 print("Panic - reporting users at too great a rate. Exiting.")

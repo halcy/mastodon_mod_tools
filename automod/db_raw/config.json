@@ -5,7 +5,7 @@
             "min_len": 5,
             "threshold": 0.93,
             "threshold_similar": 0.95,
-            "ignore": ["internal.fetch"]
+            "ignore": ["internal.fetch", "instance.actor"]
         },
         "display_name": {
             "type": "text",
