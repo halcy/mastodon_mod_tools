@@ -1,3 +1,4 @@
+# Imports
 import torch
 from PIL import Image
 import open_clip
@@ -14,6 +15,7 @@ import os
 import sys
 from mastodon import Mastodon
 import numpy as np
+from instancedb import FediInstanceDB
 
 # Settings
 app_settings = {
@@ -22,8 +24,10 @@ app_settings = {
     "embed_db_file": "/mnt/c/Users/halcy/Desktop/mastodon_mod_tools/automod/db.pkl",
     "image_extensions": ["gif", "png", "jpg", "jpeg"],
     "wait_time": 120,
-    "preemptive_silence": False,
+    "preemptive_silence": True,
     "panic_stop": 10,
+    "max_fetch_pages": 25,
+    "id_hist_length": 1000,    
 }
 
 # Empty trigger database for initial state
@@ -33,7 +37,8 @@ trigger_db = {
     "config": None,
     "last_checked_user_id": 0,
     "field_history": defaultdict(list),
-    "reported_ids": set( )
+    "reported_ids": set( ),
+    "seen_ids": list( )
 }
 
 # Embed helpers
@@ -55,7 +60,7 @@ def get_image_embed(image, image_preprocessor, clip_model):
 
 # IO helpers
 def read_image(path):
-    return Image.open(path).convert("RGB")
+    return Image.open(path).convert("RGBA").convert("RGB")
 
 def glob_multiple(path, extensions):
     files = []
@@ -67,7 +72,7 @@ def read_image_online(url):
     try:
         response = requests.get(url)
         image_file = io.BytesIO(response.content)
-        return Image.open(image_file).convert("RGB")
+        return Image.open(image_file).convert("RGBA").convert("RGB")
     except:
         return None
 
@@ -199,16 +204,36 @@ if os.path.exists(app_settings["embed_db_file"]):
     with open(app_settings["embed_db_file"], 'rb') as f:
         trigger_db = pickle.load(f)
 
-# User checker loop        
+# Nodeinfo cache
+instance_db = FediInstanceDB()
+
+# User checker loop
 while True:
     # Update trigger database
     trigger_db = update_db(trigger_db, app_settings, models)
 
     # Get new users
-    if trigger_db["last_checked_user_id"] == 0:
-        accounts = mastodon.admin_accounts_v2(origin="remote", status="active")
-    else:
-        accounts = mastodon.fetch_remaining(mastodon.admin_accounts_v2(origin="remote", status="active", since_id = trigger_db["last_checked_user_id"]))
+    accounts = [ ]
+    print(f"Fetching next user batch, last seen ID was {trigger_db['last_checked_user_id']}")
+    fetch_accounts = mastodon.admin_accounts_v2(origin="remote", status="active")
+    fetched_pages = 1
+    should_abort_fetch = False
+    while len(fetch_accounts) > 0 and fetched_pages < app_settings["max_fetch_pages"]:
+        should_abort_fetch = False
+        for account in fetch_accounts:
+            if account.id in trigger_db["seen_ids"]:
+                should_abort_fetch = True
+            else:
+                accounts.append(account)
+                trigger_db["seen_ids"].append(account.id)
+                trigger_db["seen_ids"] = trigger_db["seen_ids"][-app_settings["id_hist_length"]:]
+        if trigger_db["last_checked_user_id"] == 0:
+            should_abort_fetch = True
+        if should_abort_fetch:
+            break
+        fetched_pages += 1
+        print(f"Fetching page {fetched_pages}")
+        fetch_accounts = mastodon.fetch_next(fetch_accounts)
     if len(accounts) != 0:
         trigger_db["last_checked_user_id"] = np.max([x.id for x in accounts])
 
@@ -233,6 +258,8 @@ while True:
             print(f"Hit on user {report_dict.acct}\n\n{reason}")
 
             # File report
+            if len(reason) > 950:
+                reason = reason[:950]
             report = mastodon.report(report_dict, comment=f"/!\ AUTOMATED DETECTION /!\n\nReason: {reason}")
             panic_stop += 1
             if panic_stop >= app_settings["panic_stop"]:
@@ -240,7 +267,7 @@ while True:
                 sys.exit(0)
 
             # If desired: Silence user immediately and leave it for mod to unsilence if false positive
-            if app_settings["preemptive_silence"]:
+            if app_settings["preemptive_silence"] and not instance_db.is_closed_regs_instance():
                 mastodon.admin_account_moderate(report_dict, action="silence", report = report)
                 mastodon.admin_report_reopen(report)
     
