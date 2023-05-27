@@ -307,7 +307,7 @@ class Goku:
                             self._stop_request.set()
 
                         # If desired: Silence user immediately and leave it for mod to unsilence if false positive
-                        if self.component_manager.get_component("settings").get_config("goku")["preemptive_silence"] and not self.component_manager.get_component("instance_db").is_closed_regs_instance(report_dict.acct.split("@")[-1]):
+                        if self.component_manager.get_component("settings").get_config("goku")["preemptive_silence"] and not self.component_manager.get_component("piccolo").is_closed_regs_instance(report_dict.acct.split("@")[-1]):
                             self.component_manager.get_component("mastodon").admin_account_moderate(report_dict, action="silence", report = report)
                             self.component_manager.get_component("mastodon").admin_report_reopen(report)
                 

@@ -2,8 +2,8 @@
 import os
 from datetime import datetime
 
-from flask import Flask, request, jsonify, render_template, redirect, url_for
-from flask_login import LoginManager, UserMixin, login_user, login_required, current_user, logout_user
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user
 
 from automod.automod import Goku
 from instancedb.instancedb import Piccolo
@@ -22,7 +22,7 @@ CLIENT_CRED_FILE = "mastomod_client_cred_admin_danger.secret"
 component_manager = ComponentManager()
 component_manager.register_component("logging", Logging())
 component_manager.register_component("settings", SettingsManager(CONFIG_FILE, component_manager))
-component_manager.register_component("instance_db", Piccolo(component_manager))
+component_manager.register_component("piccolo", Piccolo(component_manager))
 component_manager.register_component("goku", Goku(component_manager), True)
 
 # Set up flask
@@ -177,6 +177,9 @@ def get_logs():
 @app.route('/settings', methods=['GET'])
 @login_required
 def get_settings():
+    """
+    Returns settings, as an edit form
+    """
     settings_manager = component_manager.get_component("settings")
     if settings_manager:
         return render_template('settings.html', settings=settings_manager.get_config())
@@ -186,6 +189,9 @@ def get_settings():
 @app.route('/settings', methods=['POST'])
 @login_required
 def update_settings():
+    """
+    Updates settings
+    """
     settings_manager = component_manager.get_component("settings")
     if settings_manager:
         for setting, value in request.json.items():
@@ -208,9 +214,51 @@ def update_settings():
     else:
         return jsonify({"error": "No settings manager component found"}), 404
 
+@app.route('/instance_info', methods=['GET', 'POST'])
+@login_required
+def instance_info():
+    """
+    Returns info for a given instance
+    """
+    piccolo = component_manager.get_component("piccolo")
+    if request.method == 'POST':
+        instance_name = request.form.get('instance_name')
+        instance_url, last_updated, instance_info = piccolo.get_nodeinfo(instance_name)
+        if instance_info is not None:
+            last_updated = datetime.fromtimestamp(last_updated).strftime('%Y-%m-%d %H:%M:%S')
+
+            # Ensure all required attributes are present in instance_info
+            if 'software' not in instance_info:
+                instance_info['software'] = {}
+            if 'usage' not in instance_info:
+                instance_info['usage'] = {}
+            if 'users' not in instance_info['usage']:
+                instance_info['usage']['users'] = {}
+            
+            return render_template('instance_search.html', instance_url=instance_url, last_updated=last_updated, instance_info=instance_info)
+        else:
+            flash('No information found for this instance', 'error')
+            return render_template('instance_search.html')
+    else: 
+        return render_template('instance_search.html')
+
+@app.route('/autocomplete_instance')
+@login_required
+def autocomplete_instance():
+    """
+    Instance autocompleter
+    """
+    piccolo = component_manager.get_component("piccolo")
+    name = request.args.get('name', '')
+    instances = piccolo.search_instance(name)
+    return jsonify(instances)
+
 @app.route('/')
 @login_required
 def home():
+    """
+    Root route, as it were
+    """
     return render_template('index.html', components=component_manager.get_components_with_bg_processing())
 
 if __name__ == "__main__":

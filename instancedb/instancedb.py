@@ -29,14 +29,15 @@ class Piccolo:
         Try to find nodeinfo and update cache
         """
         instance_url = self.normalize_instance_url(instance_url)
+        self.component_manager.get_component("logging").add_log("Piccolo", "Info", f"Fetching nodeinfo for {instance_url}")
         instance_info = None
         try:
-            instance_info = Mastodon(api_base_url = f"https://{instance_url}", version_check_mode="none")
+            instance_info = Mastodon(api_base_url = f"https://{instance_url}", version_check_mode="none").instance_nodeinfo()
         except:
             pass
         if instance_info is None:
             try:
-                instance_info = Mastodon(api_base_url = f"http://{instance_url}", version_check_mode="none")
+                instance_info = Mastodon(api_base_url = f"http://{instance_url}", version_check_mode="none").instance_nodeinfo()
             except:
                 pass
         if not instance_info is None:
@@ -46,7 +47,13 @@ class Piccolo:
         else:
             self.component_manager.get_component("logging").add_log("Piccolo", "error", f"Retrieving info failed for {instance_url}")
             return (-1, None)
-        
+    
+    def search_instance(self, name):
+        """
+        Find instances from the cache
+        """
+        return [k for k in self.instance_cache if name in k]
+
     def get_nodeinfo(self, instance_url):
         """
         Get nodeinfo, update if needed

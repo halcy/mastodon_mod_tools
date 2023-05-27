@@ -1,0 +1,13 @@
+{% if instance_info %}
+<h3>Instance Information for {{ instance_url }}</h3>
+<p>Last Updated: {{ last_updated }}</p>
+<ul>
+    <li><strong>Name:</strong> {{ instance_info.software.name|default("Unknown") }}</li>
+    <li><strong>Version:</strong> {{ instance_info.software.version|default("Unknown") }}</li>
+    <li><strong>Total Users:</strong> {{ instance_info.usage.users.total|default("Unknown") }}</li>
+    <li><strong>Active Users (Last Month):</strong> {{ instance_info.usage.users.activeMonth|default("Unknown") }}</li>
+    <li><strong>Local Posts:</strong> {{ instance_info.usage.localPosts|default("Unknown") }}</li>
+    <li><strong>Open Registrations:</strong> {{ instance_info.openRegistrations|default("Unknown") }}</li>
+    <!-- add more fields as needed -->
+</ul>
+{% endif %}

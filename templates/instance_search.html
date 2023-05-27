@@ -1,0 +1,29 @@
+
+<form id="instance-search-form" hx-post="/instance_info" hx-swap="outerHTML">
+    <label for="instance_name">Instance Name:</label>
+    <input id="instance_name" name="instance_name" type="text" list="instance_names">
+    <datalist id="instance_names">
+        <!-- This will be populated with JavaScript -->
+    </datalist>
+    <input type="submit" value="Search">
+
+    <script>
+    document.getElementById('instance-search-form').addEventListener('input', (event) => {
+        if (event.target.id === 'instance_name') {
+            fetch('/autocomplete_instance?name=' + event.target.value)
+                .then(response => response.json())
+                .then(data => {
+                    const datalist = document.getElementById('instance_names');
+                    datalist.innerHTML = '';
+                    data.forEach(name => {
+                        const option = document.createElement('option');
+                        option.value = name;
+                        datalist.appendChild(option);
+                    });
+                });
+        }
+    });
+    </script>
+
+    {% include "instance_info.html" %}
+</form>
