@@ -6,6 +6,9 @@ tool (Goku - the Guarding Online Kommunications Utility) and a caching instance
 databse (Piccolo - the Platform for Instance Cataloging (with Cache Of Last 
 Operations)), thus far with no GUI.
 
+Very very alpha software. Run at own risk. Known limitation currently: CLIP model
+used isn't really good at non-latin charsets for text.
+
 Planned:
 * Bulma - the Broad Utility for Logging Moderation Activity, a tool for logging, 
   archiving and autoclosing (if remote already banned the user)
