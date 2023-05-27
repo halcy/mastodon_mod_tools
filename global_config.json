@@ -1,0 +1,1 @@
+{"goku": {"raw_db_dir": "C:/Users/halcy/Desktop/mastodon_mod_tools/automod/db_raw/", "embed_db_file": "C:/Users/halcy/Desktop/mastodon_mod_tools/automod/db.pkl", "image_extensions": ["gif", "png", "jpg", "jpeg"], "wait_time": 120, "preemptive_silence": true, "panic_stop": 10, "max_fetch_pages": 25, "id_hist_length": 1000}}

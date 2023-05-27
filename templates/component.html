@@ -1,0 +1,6 @@
+<div id="{{component_name}}" hx-get="/state/{{component_name}}" hx-trigger="load delay:1s" hx-swap="outerHTML">
+    <h3>{{ component_name }}</h3>
+    <p>Status: {{ component.state() }}</p>
+    <button hx-post="/start/{{component_name}}" hx-swap="outerHTML" hx-target="#{{component_name}}">Start</button>
+    <button hx-post="/stop/{{component_name}}" hx-swap="outerHTML" hx-target="#{{component_name}}">Stop</button>
+</div>

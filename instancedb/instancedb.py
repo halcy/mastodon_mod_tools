@@ -3,10 +3,14 @@
 import time
 from mastodon import Mastodon
 
-class FediInstanceDB:
-    def __init__(self, max_cache_age_seconds = 3600):
+class Piccolo:
+    """
+    It's Piccolo, the Platform for Instance Cataloging (with Cache Of Last Operations)
+    """
+    def __init__(self, component_manager, max_cache_age_seconds = 3600):
         self.max_cache_age_seconds = max_cache_age_seconds
         self.instance_cache = {}
+        self.component_manager = component_manager
 
     def normalize_instance_url(self, instance_url):
         """
@@ -40,6 +44,7 @@ class FediInstanceDB:
         if instance_url in self.instance_cache:
             return self.instance_cache[instance_url]
         else:
+            self.component_manager.get_component("logging").add_log("Piccolo", "error", f"Retrieving info failed for {instance_url}")
             return (-1, None)
         
     def get_nodeinfo(self, instance_url):
@@ -61,7 +66,7 @@ class FediInstanceDB:
         """
         is_closed = False
         try:
-            is_closed = self.get_nodeinfo()[2]["openRegistrations"] == False
+            is_closed = self.get_nodeinfo(instance_url)[2]["openRegistrations"] == False
         except:
             pass
         return is_closed

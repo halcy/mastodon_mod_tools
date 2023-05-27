@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Component Control</title>
+    <script src="https://unpkg.com/htmx.org@1.6.1"></script> <!-- Include htmx -->
+    <script src="https://unpkg.com/htmx.org/dist/ext/json-enc.js"></script>
+    <style>
+        #components {
+            width: 55%;
+            float: left;
+        }
+
+        #logs {
+            width: 44%;
+            float: right;
+        }
+
+        form {
+            width: 50%;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+        input, select {
+            width: 100%;
+            margin-top: 5px;
+            padding: 5px;
+            box-sizing: border-box;
+        }
+        input[type="submit"] {
+            margin-top: 20px;
+            cursor: pointer;
+        }
+
+        h1, h2, h3 {
+            margin-top: 10px;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Detect-and-Ban-Zone</h1>
+    <div id="components">
+        <h2>Component status</h2>
+        {% for component_name in components %}
+            <div id="{{component_name}}" hx-get="/state/{{component_name}}" hx-trigger="load delay:1s" hx-swap="outerHTML"></div>
+        {% endfor %}        
+        <h2>Settings</h2>        
+        <div id="settings" hx-get="/settings" hx-trigger="load" hx-swap="outerHTML"></div>
+    </div>
+    <div id="logs" hx-get="/logs" hx-trigger="load delay:1s" hx-swap="outerHTML"></div>
+</body>
+</html>

@@ -1,0 +1,6 @@
+flask 
+flask-login 
+mastodon.py 
+pillow 
+numpy 
+open-clip-torch

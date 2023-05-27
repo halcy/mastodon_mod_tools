@@ -1,0 +1,10 @@
+<div id="logs" hx-get="/logs" hx-trigger="load delay:1s" hx-swap="outerHTML">
+    <h2>Logs</h2>
+    <div style="height: 100%; overflow: hidden;">
+    {% for log in logs|reverse %}
+        <p style="margin: 0; color: {{ 'green' if log.severity == 'Info' else 'red' if log.severity == 'Error' else 'orange' }}">
+            [{{ log.timestamp|strftime('%Y-%m-%d %H:%M:%S') }}] {{ log.component }} - {{ log.severity }} - {{ log.message }}
+        </p>
+    {% endfor %}
+    </div>
+</div>

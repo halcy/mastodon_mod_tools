@@ -1,0 +1,22 @@
+<form id="settings-form" hx-post="/settings" hx-swap="outerHTML" hx-ext="json-enc">
+    {% for component, settings in settings.items() %}
+        <h3>{{ component }}</h3>
+        {% for key, value in settings.items() %}
+            <label for="{{ component }}-{{ key }}">{{ key }}</label>
+            {% if value|is_boolean %}
+                <select id="{{ component }}-{{ key }}" name="{{ component }}/{{ key }}">
+                    <option value="true" {% if value %}selected{% endif %}>True</option>
+                    <option value="false" {% if not value %}selected{% endif %}>False</option>
+                </select>
+            {% elif value|is_number %}
+                <input id="{{ component }}-{{ key }}" name="{{ component }}/{{ key }}" type="number" value="{{ value }}">
+            {% elif value|is_list %}
+                <input id="{{ component }}-{{ key }}" name="{{ component }}/{{ key }}" type="text" value="{{ value|join(', ') }}">
+            {% else %}
+                <input id="{{ component }}-{{ key }}" name="{{ component }}/{{ key }}" type="text" value="{{ value }}">
+            {% endif %}
+            <br/>
+        {% endfor %}
+    {% endfor %}
+    <input type="submit" value="Update Settings">
+</form>
