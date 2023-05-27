@@ -11,7 +11,13 @@ used isn't really good at non-latin charsets for text.
 
 Planned:
 * Bulma - the Broad Utility for Logging Moderation Activity, a tool for logging, 
-  archiving and autoclosing (if remote already banned the user)
+  archiving and autoclosing (if remote already banned the user) reports
+* Possibly tooling to un-limit users that local users follow even if they're on 
+  limited instances
+* Possibly tooling to also list media-silence instances because mastodon doesn't
+  anymore (?) and to automatically revise suspend lists (prune dead instances,
+  set auto-expiry for temp "oh shit they're getting overran by spam" type silences)
 * Some tool to automatically update detection patterns based on what mods do with
   reports
 * Maybe an API to get input from trusted other servers?
+* Your idea here. Please tell me things you think would be useful to have.
