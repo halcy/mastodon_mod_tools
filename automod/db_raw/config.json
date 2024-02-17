@@ -1,37 +1,50 @@
 {
     "fields": {
-        "username": {
+        "account.username": {
             "type": "text",
             "min_len": 5,
             "threshold": 0.93,
             "threshold_similar": 0.95,
             "ignore": ["internal.fetch", "instance.actor", "mastodon.internal"]
         },
-        "display_name": {
+        "account.display_name": {
             "type": "text",
             "min_len": 3,
-            "threshold": 0.83,
+            "threshold": 0.88,
             "threshold_similar": 0.95,
             "ignore": []
         },
-        "note": {
+        "account.note": {
             "type": "text",
             "min_len": 10,
             "threshold": 0.93,
             "threshold_similar": 0.95,
             "ignore": []
         },
-        "avatar": {
+        "account.avatar": {
             "type": "image",
             "threshold": 0.95,
             "threshold_similar": 0.95,
             "ignore": ["https://icosahedron.website/avatars/original/missing.png"]
         },
-        "header": {
+        "account.header": {
             "type": "image",
             "threshold": 0.93,
             "threshold_similar": 0.95,
             "ignore": ["https://icosahedron.website/headers/original/missing.png"]
+        },
+        "status.@.media_attachments.@.url": {
+            "type": "image",
+            "threshold": 0.93,
+            "threshold_similar": 0.95,
+            "ignore": []
+        },
+        "status.@.content": {
+            "type": "text",
+            "min_len": 10,
+            "threshold": 0.97,
+            "threshold_similar": 0.95,
+            "ignore": []
         }
     },
     "overall_threshold_likelihood": 0.95,

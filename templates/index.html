@@ -46,7 +46,7 @@
         {% for component_name in components %}
             <div id="{{component_name}}" hx-get="/state/{{component_name}}" hx-trigger="load delay:1s" hx-swap="outerHTML"></div>
         {% endfor %}        
-        <h2>Settings</h2>
+        <h2>Instance lookup</h2>
         {% include "instance_search.html" %}
         <h2>Settings</h2>
         <div id="settings" hx-get="/settings" hx-trigger="load" hx-swap="outerHTML"></div>

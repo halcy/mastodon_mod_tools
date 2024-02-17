@@ -16,13 +16,17 @@ class Logging:
     """
     Basig log message storage
     """
-    def __init__(self, max_logs=100):
+    def __init__(self, max_logs=2000, severities = ["Debug", "Info", "Warn", "Error", "Fatal"]):
         self.logs = []
         self.max_logs = max_logs
+        self.severities = severities
 
     def add_log(self, component, severity, message):
         timestamp = time.time()
         log_entry = LogEntry(timestamp, component, severity, message)
+        if not severity in self.severities:
+            return
+        
         self.logs.append(log_entry)
 
         if len(self.logs) > self.max_logs:
@@ -46,7 +50,8 @@ class SettingsManager:
     
     def get_config(self, component = None):
         if component is None:
-            return self.config
+            # Return config but without "base" component
+            return {x: self.config[x] for x in self.config if x != "base"}
         else:
             return self.config[component]
 

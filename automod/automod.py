@@ -16,10 +16,28 @@ import sys
 from mastodon import Mastodon
 import numpy as np
 import threading
+import traceback
+import re
 
 """
 First, some utilities that I didn't feel like bothering putting into the class
 """
+# Iterative dict getters
+def get_by_path(get_dict, path):
+    current_value = get_dict
+    for path_component in path.split("."):
+        if path_component == "@":
+            path_component = 0
+            if len(current_value) < 1:
+                return None
+            current_value = current_value[0]
+        else:
+            if path_component in current_value:
+                current_value = current_value[path_component]
+            else:
+                return None
+    return current_value
+
 # Embed helpers
 def get_text_embed(text, tokenizer, clip_model):
     with torch.no_grad():
@@ -131,6 +149,7 @@ class Goku:
         
         # Update embeds
         for field, field_data in trigger_db_updated["config"]["fields"].items():
+            self.component_manager.get_component("logging").add_log("Goku", "Trace", f"Updating field {field}")
             dirty = False
             if field_data["type"] == "image":
                 images = glob_multiple(Path(self.component_manager.get_component("settings").get_config("goku")["raw_db_dir"]) / field, self.component_manager.get_component("settings").get_config("goku")["image_extensions"])
@@ -151,9 +170,11 @@ class Goku:
             if dirty:
                 trigger_db_updated["pre_matrices"][field] = np.vstack(list(trigger_db_updated["embeds"][field].values()))
 
+        for key in trigger_db_updated["pre_matrices"]:
+            self.component_manager.get_component("logging").add_log("Goku", "Trace", f"Matrix shape for {key}: {trigger_db_updated['pre_matrices'][key].shape}")
         self.trigger_db = trigger_db_updated
 
-    def eval_user(self, user_dict):
+    def eval_user(self, user_dict, posts_dicts, update_history = True, check_types = ["account", "status"]):
         """
         Test user against trigger db and do similarity check
         Returns a LIST of results, since it can generate multiple reported users
@@ -163,52 +184,76 @@ class Goku:
         best_match_likelihood = 0.0
         similarity_match_fields = []
         similarity_match_cross = None
+        for field_raw in self.trigger_db["pre_matrices"]:
+            # Find what we want to trigger on
+            field_type = field_raw.split(".")[0]
+            field = ".".join(field_raw.split(".")[1:])
+            if field_type == "account":
+                check_dict = user_dict
+            elif field_type == "status":
+                check_dict = posts_dicts
+            else:
+                assert False, "Invalid field type: " + str(field_type)
+            if not field_type in check_types:
+                continue
 
-        for field in self.trigger_db["pre_matrices"]:
+            # Find field value
+            self.component_manager.get_component("logging").add_log("Goku", "Trace", f"Checking field {field}")
+            field_val = get_by_path(check_dict, field)
+            if field_val is None:
+                continue
+            self.component_manager.get_component("logging").add_log("Goku", "Trace", f"Value is {field_val}")
+
             # Check against ignore list so we don't report for missing ava/header, or being the internal fetch actor
-            if user_dict[field] in self.trigger_db["config"]["fields"][field]["ignore"]:
+            if field_val in self.trigger_db["config"]["fields"][field_raw]["ignore"]:
                 continue
 
             # Bail if below minimum length
             min_len = 1
-            if self.trigger_db["config"]["fields"][field]["type"] == "text":
-                min_len = self.trigger_db["config"]["fields"][field]["min_len"]
-            if len(user_dict[field]) < min_len:
+            if self.trigger_db["config"]["fields"][field_raw]["type"] == "text":
+                # Strip html (or rather: anything between <.*>)
+                field_val = re.sub(r'<.*?>', '', field_val)
+                min_len = self.trigger_db["config"]["fields"][field_raw]["min_len"]
+            if len(field_val) < min_len:
                 continue
 
             # Find embed value for field
             field_embed = None
-            if self.trigger_db["config"]["fields"][field]["type"] == "image":
-                image = read_image_online(user_dict[field])
+            if self.trigger_db["config"]["fields"][field_raw]["type"] == "image":
+                image = read_image_online(field_val)
                 if not image is None:
                     field_embed = get_image_embed(image, self.models["image_preprocessor"], self.models["clip_model"])
-            if self.trigger_db["config"]["fields"][field]["type"] == "text":
-                field_embed = get_text_embed(user_dict[field], self.models["text_tokenizer"], self.models["clip_model"]) 
-            
+            elif self.trigger_db["config"]["fields"][field_raw]["type"] == "text":
+                field_embed = get_text_embed(field_val, self.models["text_tokenizer"], self.models["clip_model"]) 
+            else:
+                assert False, "Invalid content type"
+
             # Compare with database
             if not field_embed is None:
-                cosine_sim_matrix = self.trigger_db["pre_matrices"][field] @ field_embed
+                cosine_sim_matrix = self.trigger_db["pre_matrices"][field_raw] @ field_embed
                 field_match_likelihood = np.max(cosine_sim_matrix)
-                if field_match_likelihood >= self.trigger_db["config"]["fields"][field]["threshold"]:
+                self.component_manager.get_component("logging").add_log("Goku", "Trace", f"Field {field} - best match with db: {field_match_likelihood}")
+                if field_match_likelihood >= self.trigger_db["config"]["fields"][field_raw]["threshold"]:
                     match_idx = np.argmax(cosine_sim_matrix)
-                    matches.append([field, field_match_likelihood, user_dict[field], list(self.trigger_db["embeds"][field].keys())[match_idx]])
+                    matches.append([field, field_match_likelihood, field_val, list(self.trigger_db["embeds"][field_raw].keys())[match_idx]])
                 best_match_likelihood = max(best_match_likelihood, field_match_likelihood)
 
                 # Compare with history
-                if len(self.trigger_db["field_history"][field]) > 0:
-                    history_matrix = np.array([x[1] for x in self.trigger_db["field_history"][field]])
-                    similarity_matches = ((history_matrix @ field_embed) > self.trigger_db["config"]["fields"][field]["threshold_similar"])
+                if len(self.trigger_db["field_history"][field_raw]) > 0:
+                    history_matrix = np.array([x[1] for x in self.trigger_db["field_history"][field_raw]])
+                    similarity_matches = ((history_matrix @ field_embed) > self.trigger_db["config"]["fields"][field_raw]["threshold_similar"])
                     if np.sum(similarity_matches) >= self.trigger_db["config"]["similar_users_count_threshold"]:
-                        similarity_match_fields.append(field)
-                        similarity_match_dict = dict(zip(similarity_matches, [x[0] for x in self.trigger_db["field_history"][field]]))
+                        similarity_match_fields.append(field_raw)
+                        similarity_match_dict = dict(zip(similarity_matches, [x[0] for x in self.trigger_db["field_history"][field_raw]]))
                         if similarity_match_cross is None:
                             similarity_match_cross = similarity_match_dict
                         else:
                             similarity_match_cross = {x: similarity_match_dict[x] for x in similarity_match_dict.keys() & similarity_match_cross.keys()}
 
                 # Append to history
-                self.trigger_db["field_history"][field].append((user_dict, field_embed))
-                self.trigger_db["field_history"][field] = self.trigger_db["field_history"][field][-self.trigger_db["config"]["similar_users_history_length"]:]
+                if update_history:
+                    self.trigger_db["field_history"][field_raw].append((user_dict, field_embed))
+                    self.trigger_db["field_history"][field_raw] = self.trigger_db["field_history"][field_raw][-self.trigger_db["config"]["similar_users_history_length"]:]
 
         # See if we hit any match conditions
         hit = False
@@ -224,12 +269,10 @@ class Goku:
         # And the conditions for similarity match
         if len(similarity_match_fields) >= self.trigger_db["config"]["similar_users_threshold_flags"]:
             # Generate reason string
-            reason = f"Similar user count exceeded on fields {similarity_match_fields}. Matching users (matching fields intersection):\n"
+            reason = f"Similar count exceeded on fields {similarity_match_fields}. Matching users (matching fields intersection):\n"
             for is_match, match_dict in similarity_match_cross:
                 if is_match:
-                    reason += f" * {match_dict.acct}, {field} = '{match_dict[field]}'\n"
-            reason += f" * {user_dict.acct}, {field} = '{user_dict[field]}'\n"
-
+                    reason += f" * {match_dict.acct}'\n"
             # One report for every matching user
             for is_match, match_dict in similarity_match_cross:
                 if is_match:
@@ -242,8 +285,50 @@ class Goku:
             response_text = f"Reason: {reason}\n\nMatches:\n"
             for field, likelihood, field_value, matched_value in matches:
                 response_text += f" * {field} = '{field_value}' matched db entry '{matched_value}' with likelihood {likelihood}\n"
-            reports.append((user_dict, response_text))
+            reports.append((user_dict, response_text, best_match_likelihood))
         return reports
+
+    def generate_reports(self, reports, allow_suspend=True):
+        """
+        File reports for the provided users
+        """
+        reported_count = 0
+        for report_dict, reason, best_match_likelihood in reports:
+            # Skip already reported
+            if allow_suspend:
+                if report_dict["id"] in self.trigger_db["reported_ids"]:
+                    continue
+            else:
+                if report_dict["id"] in self.trigger_db["reported_ids_nosuspend"]:
+                    continue
+
+            # Log hit
+            acct_name = report_dict["acct"]
+            self.component_manager.get_component("logging").add_log("Goku", "Info", f"Hit on user {acct_name}\n\n{reason}")
+
+            # File report
+            if len(reason) > 950:
+                reason = reason[:950]
+            report = self.component_manager.get_component("mastodon").report(report_dict, comment=f"/!\ AUTOMATED DETECTION /!\\\n\nReason: {reason}")
+            reported_count += 1
+
+            # If desired: Silence user immediately and leave it for mod to unsilence if false positive
+            if self.component_manager.get_component("settings").get_config("goku")["preemptive_silence"] and not self.component_manager.get_component("piccolo").is_closed_regs_instance(report_dict["acct"].split("@")[-1]):
+                self.component_manager.get_component("mastodon").admin_account_moderate(report_dict, action="silence", report_id = report)
+                self.component_manager.get_component("mastodon").admin_report_reopen(report)
+            
+            # If desired: Auto-suspend above a certain likelihood
+            if best_match_likelihood > self.component_manager.get_component("settings").get_config("goku")["preemptive_suspend_thresh"]:
+                if allow_suspend:
+                    self.component_manager.get_component("mastodon").admin_account_moderate(report_dict, action="suspend", report_id = report)
+                    self.component_manager.get_component("mastodon").admin_report_reopen(report)
+
+            # Add to history
+            if allow_suspend:
+                self.trigger_db["reported_ids"].add(report_dict["id"])
+            else:
+                self.trigger_db["reported_ids_nosuspend"] = self.trigger_db["reported_ids_nosuspend"] | {report_dict["id"]}
+        return reported_count
 
     def user_check_loop(self):
         """
@@ -288,31 +373,16 @@ class Goku:
                 panic_stop = 0
                 for user in accounts:
                     account_dict = user.account
-                    reports = self.eval_user(account_dict)
-                    for report_dict, reason in reports:
-                        # Skip already reported
-                        if report_dict.id in self.trigger_db["reported_ids"]:
-                            continue
-
-                        # Log hit
-                        self.component_manager.get_component("logging").add_log("Goku", "Info", f"Hit on user {report_dict.acct}\n\n{reason}")
-
-                        # File report
-                        if len(reason) > 950:
-                            reason = reason[:950]
-                        report = self.component_manager.get_component("mastodon").report(report_dict, comment=f"/!\ AUTOMATED DETECTION /!\n\nReason: {reason}")
-                        panic_stop += 1
-                        if panic_stop >= self.component_manager.get_component("settings").get_config("goku")["panic_stop"]:
-                            self.component_manager.get_component("logging").add_log("Goku", "Info", "Panic - reporting users at too great a rate. Stopping component.")
-                            self._stop_request.set()
-
-                        # If desired: Silence user immediately and leave it for mod to unsilence if false positive
-                        if self.component_manager.get_component("settings").get_config("goku")["preemptive_silence"] and not self.component_manager.get_component("piccolo").is_closed_regs_instance(report_dict.acct.split("@")[-1]):
-                            self.component_manager.get_component("mastodon").admin_account_moderate(report_dict, action="silence", report = report)
-                            self.component_manager.get_component("mastodon").admin_report_reopen(report)
-                
-                        # Add to history
-                        self.trigger_db["reported_ids"].add(report_dict.id)
+                    account_posts = self.component_manager.get_component("mastodon").account_statuses(account_dict.id, limit=5)
+                    if len(account_posts) == 0:
+                        time.sleep(1.0)
+                        account_posts = self.component_manager.get_component("mastodon").account_statuses(account_dict.id, limit=5)
+                    self.component_manager.get_component("logging").add_log("Goku", "Trace", f"Checking user {account_dict.acct} with {len(account_posts)} posts.")
+                    reports = self.eval_user(account_dict, account_posts)
+                    panic_stop += self.generate_reports(reports)
+                    if panic_stop >= self.component_manager.get_component("settings").get_config("goku")["panic_stop"]:
+                        self.component_manager.get_component("logging").add_log("Goku", "Info", "Panic - reporting users at too great a rate. Stopping component.")
+                        self._stop_request.set()
 
                 # Store trigger db cache with updated histories
                 with open(self.component_manager.get_component("settings").get_config("goku")["embed_db_file"], 'wb') as f:
@@ -323,10 +393,10 @@ class Goku:
                 wait_time_start = time.time()
                 while not self._stop_request.is_set() and time.time() - wait_time_start < self.component_manager.get_component("settings").get_config("goku")["wait_time"]:
                     time.sleep(1.0)
-            except Exception as e:
-                    _, _, exc_tb = sys.exc_info()
-                    self.component_manager.get_component("logging").add_log("Goku", "Error", f"An error occurred in the user check loop: {e} at line {exc_tb.tb_lineno}")
-                    time.sleep(1.0)
+            except Exception:
+                exc_str = traceback.format_exc()
+                self.component_manager.get_component("logging").add_log("Goku", "Error", f"An error occurred in the user check loop: {exc_str}")
+                time.sleep(1.0)
 
         self.component_manager.get_component("logging").add_log("Goku", "Info", "Component stopped")
         self._is_running.clear()
