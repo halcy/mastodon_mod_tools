@@ -94,13 +94,14 @@ class Goku:
             "last_checked_user_id": 0,
             "field_history": defaultdict(list),
             "reported_ids": set( ),
+            "reported_ids_nosuspend": set( ),
             "seen_ids": list( )
         }
 
         # Load trigger db cache, if we have one
         if os.path.exists(self.component_manager.get_component("settings").get_config("goku")["embed_db_file"]):
             with open(self.component_manager.get_component("settings").get_config("goku")["embed_db_file"], 'rb') as f:
-                self.trigger_db = pickle.load(f)
+                self.trigger_db.update(pickle.load(f))
 
         # Load models
         clip_model, _, image_preprocessor = open_clip.create_model_and_transforms('ViT-B-32', pretrained='laion2b_s34b_b79k')
@@ -318,7 +319,7 @@ class Goku:
                 self.component_manager.get_component("mastodon").admin_report_reopen(report)
             
             # If desired: Auto-suspend above a certain likelihood
-            if best_match_likelihood > self.component_manager.get_component("settings").get_config("goku")["preemptive_suspend_thresh"]:
+            if best_match_likelihood > self.component_manager.get_component("settings").get_config("goku")["preemptive_suspend_thresh"] and not self.component_manager.get_component("piccolo").is_closed_regs_instance(report_dict["acct"].split("@")[-1]):
                 if allow_suspend:
                     self.component_manager.get_component("mastodon").admin_account_moderate(report_dict, action="suspend", report_id = report)
                     self.component_manager.get_component("mastodon").admin_report_reopen(report)

@@ -259,8 +259,8 @@ def invoke_goku_status():
         # Get components
         settings_manager = component_manager.get_component("settings")
         goku = component_manager.get_component("goku")
-        if settings_manager is not None and goku is not None:
-
+        piccolo = component_manager.get_component("piccolo")
+        if settings_manager is not None and goku is not None and not piccolo is None:
             # Verify signature
             signature_header = request.headers.get('X-Hub-Signature')
             if signature_header is None:
@@ -273,15 +273,23 @@ def invoke_goku_status():
             if not hmac.compare_digest(digest, signature):
                 return jsonify({"error": "Invalid secret"}), 403
 
+            # Parse request
             post_dict = request.json
             status_object = post_dict["object"]
             account_object = status_object["account"]
+            
+            # At this time, if other instance reports that they are closed-reg, trust that information and stop here
+            if component_manager.get_component("piccolo").is_closed_regs_instance(account_object["acct"].split("@")[-1]):
+                return jsonify({"status": "ok"})
+            
+            # Otherwise, run goku
             reports = goku.eval_user(account_object, [status_object], update_history = False, check_types=["status"])
 
             # File reports
             if len(reports) > 0:
                 goku.generate_reports(reports, allow_suspend = False)
                 component_manager.get_component("logging").add_log("Goku", "Info", f"Generated report in webhook for {account_object['acct']}")
+                return jsonify({"status": "bad"}) # ideally we would return something here that makes mastodon hold notifications
             return jsonify({"status": "ok"})
         else:
             return jsonify({"error": "Not ready"}), 404
