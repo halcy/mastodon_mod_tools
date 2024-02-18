@@ -61,16 +61,16 @@ class Piccolo:
                         with open(cache_file, 'wb') as f:
                             pkl.dump(self.instance_cache, f)
                         self.last_store = time.time()
-                        self.component_manager.get_component("logging").add_log("Piccolo", "error", f"Stored instance db cache")
+                        self.component_manager.get_component("logging").add_log("Piccolo", "Info", f"Stored instance db cache")
                 except Exception as e:
-                    self.component_manager.get_component("logging").add_log("Piccolo", "error", f"Failed to store instance db cache: {e}")
+                    self.component_manager.get_component("logging").add_log("Piccolo", "Error", f"Failed to store instance db cache: {e}")
                 finally:
                     self.store_lock.release()
 
         if instance_url in self.instance_cache:
             return self.instance_cache[instance_url]
         else:
-            self.component_manager.get_component("logging").add_log("Piccolo", "error", f"Retrieving info failed for {instance_url}")
+            self.component_manager.get_component("logging").add_log("Piccolo", "Error", f"Retrieving info failed for {instance_url}")
             return (-1, None)
 
     def search_instance(self, name):
