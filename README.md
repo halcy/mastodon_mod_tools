@@ -9,6 +9,9 @@ Operations)), thus far with no GUI.
 Very very alpha software. Run at own risk. Known limitation currently: CLIP model
 used isn't really good at non-latin charsets for text.
 
+There is support for triggering on the status.created webhook, but it only really
+makes sense to do that if you patch mastodon to run it for nonlocal statuses.
+
 Planned:
 * Bulma - the Broad Utility for Logging Moderation Activity, a tool for logging, 
   archiving and autoclosing (if remote already banned the user) reports
