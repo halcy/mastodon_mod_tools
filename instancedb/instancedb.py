@@ -70,7 +70,7 @@ class Piccolo:
         if instance_url in self.instance_cache:
             return self.instance_cache[instance_url]
         else:
-            self.component_manager.get_component("logging").add_log("Piccolo", "Error", f"Retrieving info failed for {instance_url}")
+            self.component_manager.get_component("logging").add_log("Piccolo", "Warning", f"Retrieving info failed for {instance_url}")
             return (-1, None)
 
     def search_instance(self, name):
