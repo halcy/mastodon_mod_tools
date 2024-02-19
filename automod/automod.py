@@ -1,4 +1,5 @@
 # Imports
+from dataclasses import dataclass, field
 import torch
 from PIL import Image
 import open_clip
@@ -18,6 +19,12 @@ import numpy as np
 import threading
 import traceback
 import re
+
+@dataclass
+class Report:
+    data: dict
+    reason: str
+    likelihood: float
 
 """
 First, some utilities that I didn't feel like bothering putting into the class
@@ -271,14 +278,14 @@ class Goku:
         if len(similarity_match_fields) >= self.trigger_db["config"]["similar_users_threshold_flags"]:
             # Generate reason string
             reason = f"Similar count exceeded on fields {similarity_match_fields}. Matching users (matching fields intersection):\n"
-            for is_match, match_dict in similarity_match_cross:
+            for is_match, match_dict in similarity_match_cross.items():
                 if is_match:
                     reason += f" * {match_dict.acct}'\n"
             # One report for every matching user
-            for is_match, match_dict in similarity_match_cross:
+            for is_match, match_dict in similarity_match_cross.items():
                 if is_match:
-                    reports.append((match_dict, reason))
-            reports.append((user_dict, reason))
+                    reports.append(Report(match_dict, reason, best_match_likelihood))
+            reports.append(Report(user_dict, reason, best_match_likelihood))
 
         # Generate response text
         response_text = ""
@@ -286,7 +293,7 @@ class Goku:
             response_text = f"Reason: {reason}\n\nMatches:\n"
             for field, likelihood, field_value, matched_value in matches:
                 response_text += f" * {field} = '{field_value}' matched db entry '{matched_value}' with likelihood {likelihood}\n"
-            reports.append((user_dict, response_text, best_match_likelihood))
+            reports.append(Report(user_dict, response_text, best_match_likelihood))
         return reports
 
     def generate_reports(self, reports, allow_suspend=True):
@@ -294,7 +301,8 @@ class Goku:
         File reports for the provided users
         """
         reported_count = 0
-        for report_dict, reason, best_match_likelihood in reports:
+        for report in reports:
+            report_dict, reason, best_match_likelihood = report.data, report.reason, report.likelihood
             # Skip already reported
             if allow_suspend:
                 if report_dict["id"] in self.trigger_db["reported_ids"]:
@@ -402,5 +410,3 @@ class Goku:
         self.component_manager.get_component("logging").add_log("Goku", "Info", "Component stopped")
         self._is_running.clear()
         self._stop_request.clear()
-
-    
