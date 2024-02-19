@@ -10,7 +10,7 @@
         "account.display_name": {
             "type": "text",
             "min_len": 3,
-            "threshold": 0.88,
+            "threshold": 0.91,
             "threshold_similar": 0.95,
             "ignore": []
         },

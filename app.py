@@ -10,6 +10,7 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 
 from automod.automod import Goku
 from instancedb.instancedb import Piccolo
+from reportdb.reportdb import Bulma
 from app_utils import ComponentManager, Logging, SettingsManager
 
 from mastodon import Mastodon
@@ -19,10 +20,11 @@ CONFIG_FILE = "global_config.json"
 
 # Initialize the application component manager
 component_manager = ComponentManager()
-component_manager.register_component("logging", Logging())
 component_manager.register_component("settings", SettingsManager(CONFIG_FILE, component_manager))
+component_manager.register_component("logging", Logging(component_manager))
 component_manager.register_component("piccolo", Piccolo(component_manager))
 component_manager.register_component("goku", Goku(component_manager), True)
+component_manager.register_component("bulma", Bulma(component_manager), True)
 
 # Load base config data
 if component_manager.get_component("settings").get_config("base")["i_promise_to_be_really_careful"] == False:
@@ -74,6 +76,29 @@ def _jinja2_filter_is_number(value):
 @app.template_filter('is_list')
 def _jinja2_filter_is_list(value):
     return isinstance(value, list)
+
+"""
+Webhook tooling
+"""
+def check_signature(request, conf_key):
+    """
+    Check webhook signature
+    """
+    try:
+        signature_header = request.headers.get('X-Hub-Signature')
+        if signature_header is None:
+            return False
+        _, signature = signature_header.split('=')
+        settings_manager = component_manager.get_component("settings")
+        webhook_secret = settings_manager.get_config("base")[conf_key].encode("utf8")
+        hashed = hmac.new(webhook_secret, request.get_data(), hashlib.sha256)
+        digest = hashed.hexdigest()
+        if not hmac.compare_digest(digest, signature):
+            return False
+    except:
+        return False
+    return True
+                
 
 """
 Auth routes and data
@@ -250,8 +275,8 @@ def instance_info():
     else: 
         return render_template('instance_search.html')
 
-@app.route('/invoke_goku_status', methods=['GET', 'POST'])
-def invoke_goku_status():
+@app.route('/webhook_status', methods=['GET', 'POST'])
+def webhook_status():
     """
     Run goku for one status (webhook target)
     """
@@ -262,15 +287,7 @@ def invoke_goku_status():
         piccolo = component_manager.get_component("piccolo")
         if settings_manager is not None and goku is not None and not piccolo is None:
             # Verify signature
-            signature_header = request.headers.get('X-Hub-Signature')
-            if signature_header is None:
-                return jsonify({"error": "Invalid secret"}), 403
-            
-            _, signature = signature_header.split('=')
-            webhook_secret = settings_manager.get_config("goku")["webhook_secret"].encode("utf8")
-            hashed = hmac.new(webhook_secret, request.get_data(), hashlib.sha256)
-            digest = hashed.hexdigest()
-            if not hmac.compare_digest(digest, signature):
+            if not check_signature(request, "webhook_secret_status"):
                 return jsonify({"error": "Invalid secret"}), 403
 
             # Parse request
@@ -288,15 +305,39 @@ def invoke_goku_status():
             # File reports
             if len(reports) > 0:
                 goku.generate_reports(reports, allow_suspend = False)
-                component_manager.get_component("logging").add_log("Goku", "Info", f"Generated report in webhook for {account_object['acct']}")
+                component_manager.get_component("logging").add_log("Base", "Info", f"Generated report in webhook for {account_object['acct']}")
                 return jsonify({"status": "bad"}) # ideally we would return something here that makes mastodon hold notifications
             return jsonify({"status": "ok"})
         else:
             return jsonify({"error": "Not ready"}), 404
     except Exception:
         exc_str = traceback.format_exc()
-        component_manager.get_component("logging").add_log("Goku", "Error", f"Error in status check webhook: {exc_str}")
-    return jsonify({"error": "Internal error"}), 500    
+        component_manager.get_component("logging").add_log("Base", "Error", f"Error in status check webhook: {exc_str}")
+    return jsonify({"error": "Internal error"}), 500
+
+@app.route('/webhook_report', methods=['GET', 'POST'])
+def webhook_report():
+    """
+    Run bulma for a new report (webhook target)
+    """
+    try:
+        # Get components
+        bulma = component_manager.get_component("bulma")
+        if bulma is not None:
+            # Verify signature
+            if not check_signature(request, "webhook_secret_report"):
+                return jsonify({"error": "Invalid secret"}), 403
+
+            # Parse request
+            report = request.json["object"]
+            bulma.process_report_dict(report)
+            return jsonify({"status": "ok"})
+        else:
+            return jsonify({"error": "Not ready"}), 404
+    except Exception:
+        exc_str = traceback.format_exc()
+        component_manager.get_component("logging").add_log("Base", "Error", f"Error in report check webhook: {exc_str}")
+    return jsonify({"error": "Internal error"}), 500
 
 @app.route('/autocomplete_instance')
 @login_required

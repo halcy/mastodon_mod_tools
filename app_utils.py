@@ -16,17 +16,25 @@ class Logging:
     """
     Basig log message storage
     """
-    def __init__(self, max_logs=2000, severities = ["Debug", "Info", "Warn", "Error", "Fatal"]):
+    def __init__(self, component_manager, max_logs=2000):
         self.logs = []
         self.max_logs = max_logs
-        self.severities = severities
+        self.component_manager = component_manager
 
     def add_log(self, component, severity, message):
         timestamp = time.time()
         log_entry = LogEntry(timestamp, component, severity, message)
-        if not severity in self.severities:
+
+        # TODO full log to file
+
+        # Bail if we don't want this entry
+        severities = self.component_manager.get_component("settings").get_config("logging")["severities"].split(" ")
+        components = self.component_manager.get_component("settings").get_config("logging")["components"].split(" ")
+        if len(severities) > 0 and not severity in severities:
             return
-        
+        if len(components) > 0 and not component in components:
+            return
+
         self.logs.append(log_entry)
 
         if len(self.logs) > self.max_logs:
@@ -59,7 +67,10 @@ class SettingsManager:
         # There's a potential data race here if two people try to edit the config at the same time, but that largely just woN't matter
         dirty = False
         if self.config[component][key] != value:
-            self.component_manager.get_component("logging").add_log("settings", "warn", f"changing setting {key} from {self.config[component][key]} to {value}.")
+            try:
+                self.component_manager.get_component("logging").add_log("settings", "warn", f"changing setting {key} from {self.config[component][key]} to {value}.")
+            except:
+                pass
             self.config[component][key] = value
             dirty = True
         if dirty:

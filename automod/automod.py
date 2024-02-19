@@ -175,7 +175,7 @@ class Goku:
             self.component_manager.get_component("logging").add_log("Goku", "Trace", f"Matrix shape for {key}: {trigger_db_updated['pre_matrices'][key].shape}")
         self.trigger_db = trigger_db_updated
 
-    def eval_user(self, user_dict, posts_dicts, update_history = True, check_types = ["account", "status"]):
+    def eval_user(self, user_dict, posts_dicts, update_history = True, check_types = ["account", "status"], check_history = True):
         """
         Test user against trigger db and do similarity check
         Returns a LIST of results, since it can generate multiple reported users
@@ -240,7 +240,7 @@ class Goku:
                 best_match_likelihood = max(best_match_likelihood, field_match_likelihood)
 
                 # Compare with history
-                if len(self.trigger_db["field_history"][field_raw]) > 0:
+                if len(self.trigger_db["field_history"][field_raw]) > 0 and check_history:
                     history_matrix = np.array([x[1] for x in self.trigger_db["field_history"][field_raw]])
                     similarity_matches = ((history_matrix @ field_embed) > self.trigger_db["config"]["fields"][field_raw]["threshold_similar"])
                     if np.sum(similarity_matches) >= self.trigger_db["config"]["similar_users_count_threshold"]:
